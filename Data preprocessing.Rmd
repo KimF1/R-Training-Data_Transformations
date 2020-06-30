@@ -1,0 +1,1446 @@
+  ---
+title: "Master Thesis (August 2019) - Data preprocessing and exploration"
+author: "Kim Julia Fuchs"
+output: html_notebook
+---
+# Data preprocessing life-cycle with R packages
+![data preprocessing life-cycle with R.](D:/Studies/Postgraduate Studies/Sem 1 - R&SQL_for_Business_Analytics/3.Zusammenfassungen_&_Guidelines/R-Training-Data_Preprocessing/life-cycle-R.png)
+
+# Libraries
+```{r}
+# General 
+library(purrr) # for iterating operations over columns of df
+
+# Data Import
+# library(readr) # reading in flat files; included in in tidyverse
+library(readxl) # reading in xls and xlsx files (excel)
+library(haven) # reading in files from other statistical packages like SPSS or Access data
+library(DBI) # reading in from databases
+library(httr) # reading in from webAPIs
+library(rjson)
+library(data.table)# includes fread which might be faster than read's e.g. read_csv
+
+# Data Preprocessing and Transformations
+library(plyr)
+# note message: You have loaded plyr after dplyr - this is likely to cause problems.
+# If you need functions from both plyr and dplyr, please load plyr first, then dplyr:
+library(tidyverse)# tidyr: pipelines for messy to tidy data, dplyr: pipelines for data manipulation, purrr: enhances functional programming, forcats: forcats provides a suite of useful tools that solve common problems with factors, # stringr: pipelines for strings
+
+library(lubridate) # Functions to work with date-times and time-spans
+library(Hmisc) # for imputing missing values 
+# EDA 
+library(moments) # kurtosis
+library(stats)
+library(arules)
+library(DataExplorer)
+# ML Models
+library(cluster)
+library(factoextra)
+library(tree)
+library(gbm)
+require(maps)
+library(TTR)
+```
+# Remove all (hidden) objects in current env
+```{r}
+rm(list=ls())
+```
+
+# Data Loading
+* To Do: source()
+* check encoding for read_csv
+* most data loading functions in R convert character to factor vectors
+  + read.delim provides easy way to surpress this behavior: use stringAsFactors = F
+
+## Files: 
+## T readr::read_delim function family
+* readr's read_ functions are up to 10x faster than utils
+* syntax: 
+  read_delim(file, delim, quote = "\"", escape_backslash = FALSE,
+  escape_double = TRUE, col_names = TRUE, col_types = NULL,
+  locale = default_locale(), na = c("", "NA"), quoted_na = TRUE,
+  comment = "", trim_ws = FALSE, skip = 0, n_max = Inf,
+  guess_max = min(1000, n_max), progress = show_progress(),
+  skip_empty_rows = TRUE)
+
+
+## T utils::read.delim function family 
+* syntax: 
+          read.table[csv, csv2, delim, delim2](**file**, **header** = FALSE, **sep** = "", 
+          quote = "\"'", **dec** = ".", numerals = c("allow.loss", "warn.loss", "no.loss"),
+          row.names, col.names, **as.is** = !stringsAsFactors,
+          na.strings = "NA", **colClasses** = NA, nrows = -1,
+          skip = 0, check.names = TRUE, fill = !blank.lines.skip,
+          strip.white = FALSE, blank.lines.skip = TRUE,
+          comment.char = "#",
+          allowEscapes = FALSE, flush = FALSE,
+          **stringsAsFactors** = default.stringsAsFactors(),
+          fileEncoding = "", **encoding** = "unknown", text, skipNul = FALSE)
+  + file: 
+    + **it does not contain an absolute path, the file name is relative to the current working directory, getwd()**
+    + **file can also be a complete URL**
+  + header: logical; indicating whether file contains names of the variables as its first line 
+  + sep: field separator character; default for read.table: "" (white space)
+  + dec: **character used in the file for decimal points**
+  + as.is: default behavior of read.table is to convert character variables to factors 
+    + variable as.is controls conversion of variables not otherwise specified by colClasses
+    + value is either a vector of logicals or vector of numeric or character indices, specifying which columns should not be converted to factors
+  + colClasses: character vector, containing classes to be assumed for the columns
+  + na.strings: character vector of strings that are to be interpreted as NAs in the dataset (e.g. '-', or '.' etc)
+    + note: test happens **after whitespace is stripped from the inpute** 
+  + stringsAsFactors: logical; should character vectors be converted to factors?
+    + note: **this is overriden by as.is and colClasses (if specified), both of which allow for finer control**
+  + encoding: Character strings in R can be declared to be encoded in "latin1" or "UTF-8" or as "bytes" 
+    + usually UTF-8 is preferable: in latin1 each character is exactly one byte lone; in UTF-8 can consist of more than one byte
+
+### Fraud Data
+```{r}
+# Source: https://www.kaggle.com/mlg-ulb/creditcardfraud/data
+creditcard <- read_csv('D:/Studies/Postgraduate Studies/Sem 5 - Fraud Analytics/creditcard.csv')
+```
+
+### AdsData w_out Text Columns 
+```{r message =FALSE}
+ads2017 <- as.data.frame(read_csv("D:/Studies/3. MSc Studies/Master Thesis/Script and Environments/Zip/ads2017.csv", col_names = T))[,-1]
+ads2018 <- as.data.frame(read_csv("D:/Studies/3. MSc Studies/Master Thesis/Script and Environments/Zip/ads2018.csv", col_names=T))[,-1]
+ads2017add <- as.data.frame(read_csv("D:/Studies/3. MSc Studies/Master Thesis/Script and Environments/Zip/ads_add2017.csv", col_names = T))
+ads2018add <- as.data.frame(read_csv("D:/Studies/3. MSc Studies/Master Thesis/Script and Environments/Zip/ads_add2018.csv", col_names =T))
+
+# append datasets: 
+ads <- rbind(ads2017,ads2018) # 158871 observations
+adsadd <- rbind(ads2017add,ads2018add) # 158871 observations
+```
+### Housing Market Data
+```{r}
+hD18 <- as.data.frame(read.csv("D:/Studies/3. MSc Studies/Master Thesis/Script and Environments/Zip/ClusterAnalysis2018.csv", sep =";"))
+zip2muni <- as.data.frame(read.csv("D:/Studies/3. MSc Studies/Master Thesis/Script and Environments/Zip/zip2muni.csv", sep =";", encoding = 'UTF-8'))
+# zip2muni$Municipality[zip2muni$Municipality == 'Læsø\t'] <- 'Læsø'
+```
+## SQL Database
+## webAPIs
+
+# Data Merging
+## merge():joining tables 
+```{r}
+ads <- merge(ads, adsadd, by = 'adId', all = T)
+
+# merge conducts join operation: https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/merge
+# by default, dataframes are merged on columns with names they both have ('by = adId'), but separate specifications of the columns can be set using by.y, by.x
+
+# different types of joins: 
+# left (outer) join: all.x = T 
+  # all records of table x are held in joined table, and all the non matching cases of x in y are filled in with NAs in the respective columns in y
+# right (outer) join: all.y = T 
+  # all records of table y are held in joined table, 
+# inner join: all = F 
+# (full) outer join: all = T
+```
+## bind() base R function family
+* cbind/rbind take a sequence of vector, matrix or data-frame arguments and combine by columns or rows, respectively
+* cbind: combine by columns
+* rbind: combine by rows
+* syntax: cbind[rbind](..., deparse.level = 1)
+  + ...: vectors, matrices or df
+* S3 method for class 'data.frame'
+rbind(..., deparse.level = 1, make.row.names = TRUE,
+      stringsAsFactors = default.stringsAsFactors(), factor.exclude = NA)
+  + stringAsFactors: logical; indicating whether characters should be coerced to factors
+  + factor.exclude: if the data frames contain factors, TRUE ensures that NA levels of factors are kept; 
+    + factor.exclude = NA has been implicitly hardcoded 
+
+## plyr::rbind.fill(): combine dfs that don't have the same columns
+* rbinds a list of dataframes and fills missing columns with NAs
+* syntax: rbind.fill(<df1>, <df2> (...))
+
+# Get an overview of data
+## T str(<data>)
+## T dim(): Dimensions of matrix: 
+* returns nrow and ncol
+```{r}
+dim(d)
+```
+## T nrow(): Number of rows 
+## T ncol() (or length(); because dfs are also **lists** of vectors): Number of col
+```{r}
+nrow(d)
+ncol(d)
+```
+## T DataExplorer pack
+### T plot_str()
+* plots a network with one level, displaying all variables with the respective datatype
+```{r}
+DataExplorer::plot_str(ads, type = 'diagonal', linkColour= 'red') 
+
+# plot multiple datasets in one view: 
+list <- list(ads, creditcard)
+plot_str(list, type = 'diagonal', linkColour = 'red')
+```
+### T introduce() and plot_intro()
+* get a table overview of: # rows/Datensätze, # of columns, #discrete columns, total number of observations (#rows * #columns)
+```{r}
+DataExplorer::introduce(creditcard)
+# note: 
+# all_missing_columns: number of columns with everything missing
+# complete_rows: number of rows without missing values
+
+# visualize table above: 
+DataExplorer::plot_intro(creditcard) 
+```
+## T: Find the number of a specific column in df
+
+# Data Preprocessing
+
+## T:(Re-)Naming objects
+* good practice when naming objects: word1_word2_word3, all lower case to decrease risk of inconsistencies
+* obviously, names should always be unique (e.g. to allow for character subsetting etc.)
+
+### objects(): lists names of all currently stored objects, i.e. objects in workspace visible in environment pane
+
+### names() (or colnames()): lists names of an object (i.e. df)
+```{r}
+# naming using names: 
+d <- data.frame(c(1:4), c(5:8))
+names(d) <- c('n1', 'n2')
+d
+# rename using names(): names(ads)[col.index] <- 
+names(ads)[names(ads) == 'propertyType'] <- 'dwellingType'
+names(ads)[names(ads) == 'furnitured'] <- 'furnished'
+names(ads)[names(ads) == 'shared_accomodation'] <- 'sharedAccomodation'
+names(ads)[names(ads) == 'republish'] <- 'republished'
+names(ads)[names(ads) == 'rentedOutDate'] <- 'offlineDate'
+names(ads)[names(ads) == 'socialHousingcAlmen'] <- 'socialHousing'
+names(ads)[names(ads) == 'contactViaEmail_enabled'] <- 'contactViaEmailEnabled'
+names(ads)[names(ads) == 'coord_lat'] <- 'coordLat'
+names(ads)[names(ads) == 'coord_lng'] <- 'coordLng'
+names(ads)[names(ads) == 'upsellService_Product'] <- 'upsellServiceProduct'
+names(ads)[names(ads) == 'rentalPeriod_description'] <- 'rentalPeriodDescription'
+names(ads)[grepl('^ancillary', names(ads))] <- 'ancillaryCosts'
+names(ads)[grepl('^pets', names(ads))] <- 'petsAllowed'
+names(ads)[grepl('^shared', names(ads))] <- 'sharedAccomodation'
+```
+### T Rename with grepl and regex
+* when renaming columns, it might be faster to work with regex and use the ?grep functions:
+  + grep functions are base functions searching for matches to an argument 'pattern' within ech element of a character vector x
+  + e.g. grepl returns a logical vector (match or no match for each element in x)
+  + e.g. names(ads)[grepl('^ancillary',names(ads))]  returns every column name within ads that starts (signaled with ^) with 'ancillary'
+  
+```{r}
+# first try: rename by using a function
+rename_bystring_test <- function(input_df, string, new_name) {
+ old_name <-  names(input_df)[grepl(string, names(input_df))] 
+ names(input_df)[names(input_df) == old_name] <-  new_name 
+}
+# Learning: R never overwrites objects in the global environment, but rather a copy within a function
+# This is good practice, because it avoids undesirable side effects of a function silently overwriting
+# Therefore, it is good practice to do that part outside the function: 
+findname_bystring <- function(input_df, string) {
+ old_name <-  names(input_df)[grepl(string, names(input_df))] 
+ return(old_name)
+}
+
+findname_bystring(ads, '^ancillary') # ancillary_costs
+```
+### T Rename parts with gsub, grep and regex
+* grep performs equivalent to grepl, except that it returns a vector containing the indices for matching elements within charcter vector
+* gsub performs replacement of all matches to a regex
+
+* syntax: gsub(pattern, replacement, x, ignore.case = FALSE, perl = FALSE,
+     fixed = FALSE, useBytes = FALSE)
+  + pattern: charactr string containing a regex or character string for fixed = T, to be matched in given character vector
+  + replacement: replacement character string for matched pattern  
+  + x: character vector where matches are sought, or an object which can be coerced by as.character
+  + ignore.case: if F, pattern is case sensitive; if T case is ignored during matching
+  + perl: logical; should Perl-compatible regexps be used?
+```{r}
+names(ads)[grep('^area',names(ads))] <- gsub('^area', 'Area', names(ads)[grep('^area',names(ads))])
+# get colnames starting with 'area' <- replace 'area' with upper case
+names(ads)
+```
+### T dplyr::rename_at, ::rename_if, ::rename_all
+```{r}
+ads_add2017_2 <- ads_add2017
+colnames(ads_add2017_2) #"adId" "movingInDate" "movingInAsap" "delevenlig"  
+
+# changing a subset of variables' names in tibble/df: rename_at
+ads_add2017_2 <- ads_add2017_2 %>% rename_at(vars(2:4), funs(make.names(c('a', 'b', 'c'), unique = T)))
+colnames(ads_add2017_2)
+
+# changing all variables' names of tibble/df: rename_all
+ads_add2017_2 <- ads_add2017_2 %>% rename_all(funs(make.names(c('a', 'b', 'c', 'd'), unique = T)))
+colnames(ads_add2017_2)
+
+# changing subset of variables' names in tibble/df meeting certain condition
+log_names <- grepl("moving.", colnames(ads_add2017_2))
+ads_add2017_2 <- ads_add2017_2 %>%  rename_if(log_names, funs(make.names(rep('staying', length(log_names[log_names == T])))))
+colnames(ads_add2017_2)
+```
+
+### Remove names: <- NULL
+```{r}
+# names(ads) <- NULL
+```
+
+### Data cleansing I: Noise and Inconsistencies
+#### muName and muId: each megauser name should have id (and vice versa); muName should not contain 'Test'
+```{r}
+# ads %>% summarise(sum(is.na(muName)))
+# ads %>% filter(muId == 0) %>% summarise(n())
+# ads %>% filter(muId != 0 & is.na(muName) == T)
+# mu3301 <- ads %>% filter(muId == 3301)
+# mu9341 <- ads %>% filter(muId == 9341)
+# it is assumed that ids 3301 and 9341 having no name, are semi-professional landlords (i.e. no corporation)
+
+# delete observations only created for testing purposes (mainly saved as Test under muName)
+# ads2 <- ads
+# ads2 %>% filter(str_detect(muName, "Test+") |str_detect(muName, "test+")) %>% select(muName)
+tests <- ads %>%  filter(str_detect(muName, "Test+") |str_detect(muName, "test+"))
+ads <- ads %>% filter(!(ads$adId %in% c(tests$adId)))
+```
+#### deposit and social deposit (almen): each observation should either have deposit or social deposit
+```{r}
+## DECISION: exclude observations (n = 730) where both, dep and socdep are stated (nowadays BP corrects those entries)
+ads <- ads %>% filter(!(deposit != 0 & socialDeposit != 0))
+```
+#### contacteviaemail
+```{r}
+# ads%>% filter(contactViaEmailEnabled == 0) %>% select(muName, publishDate, uniqueMessages) %>% arrange(desc(publishDate)) # there are 8872 observations dated up until end of 2018 were contact via email not enabled 
+# ads%>% filter(contactViaEmailEnabled == 0 & uniqueMessages != 0) %>% select(muName, publishDate, uniqueMessages) %>% arrange(desc(uniqueMessages)) # there are some observ with email option not enabled, yet up to 178 messages 
+
+# I have decided to delete these observations out of the following reasons: 
+# the inconsistency between unique messages and email enabled variables
+# the fact that unique messages = 0 is solely because messaging was not enabled
+# this option will not be available anymore in the future, so those listings shoulnd't be included in this prediction 
+
+## DECISION: exclude obervations (n= 8872) where cve = 0 
+ads <- ads%>% filter(!contactViaEmailEnabled == 0)
+# table(ads$contactViaEmailEnabled)  # no cve = 0 left
+## DECISION: contactViaEmailEnabled to be excluded from analysis
+```
+#### XML and scraped ads: I should only include ads actually published on site (XML == 1)
+```{r}
+ads %>% filter(XMLadNotIncluded == 1)
+table(ads$XMLadNotIncluded)
+## DECISION: XML variable to be excluded from analysis
+```
+#### republished ads and new adId problem (replubishing creates new adID)
+```{r}
+# ads %>% filter(republished != 0) # non of the ads have been republished :) 
+## DECISION: republished variable to be excluded from analysis
+```
+#### rentedout, status, publishDate, offlineDate: offlineDate >! publishdate, status =! udlejet, rentedout =! 1
+```{r}
+# table(ads$status) # only udlejet :), DECISION: status to be excluded from analysis
+# table(ads$rentedout) # 11 observations with rented out = 0
+# ads %>% filter(status == "Udlejet" & rentedout == 0)# 11 observations
+# ads %>% filter(rentedout == 0 & is.na(offlineDate) == F) # 11 observations not marked as rented, yet offlineDate stated 
+
+# check those in detail: 
+# ads %>% filter(postalCode == 7100 & streetName == 'Fredericiavej' & houseNumber ==2 & houseLetter == "D" & floor == 1) # unique observation; was available as 'Eigentumswohnung' (Dan.: Ejerlejlighed); (same page as below)
+# ads %>% filter(postalCode == 4792 & streetName == 'Grønsundvej' & houseNumber == 304 & houseLetter == "B" & floor == 1) # unique observation; was available as 'Eigentumswohnung' (Dan.: Ejerlejlighed); (same page as below)
+# ads %>% filter(postalCode == 2000 & streetName == 'Holger Danskes Vej' & houseNumber == 18 &  floor == 4) # unique observation; available as 'Eigentumswohnung' (Dan.: Ejerlejlighed); https://www.boliga.dk/bolig/1557697/holger_danskes_vej_18_st_tv
+
+# ads %>% filter(postalCode == 3700 & streetName == 'Svanekevej' & houseNumber == 59 &  floor == 0) # unique observation; should be excluded anyway: parkering w/ rent 99999
+# ads %>% filter(postalCode == 9000 & streetName == 'Algade' & houseNumber == 15 &  floor == 2)# there are 2 observations with exact same specs but diff muNames and dwelling types; the observation where rentedout = 0 seems to be wrong (dwellingType doesn't suit) --> should be excluded
+
+# ads %>% filter(postalCode == 8250 & streetName == 'Brobjerg Parkvej' & houseNumber == 99 &  floor == 1) # unique observation; https://www.edc.dk/alle-boliger/eg%C3%A5/8250/brobjerg-parkvej-99-st-th/
+# ads %>% filter(postalCode == 2000 & streetName == 'Holger Danskes Vej' & houseNumber == 18)
+# unique obs; https://www.boliga.dk/bolig/519705
+
+# ads %>% filter(postalCode == 8000 & streetName == 'Falstersgade' & houseNumber == 14 & floor == 2) # unique obs; 
+# ads %>% filter(postalCode == 2400 & streetName == 'Landfogedvej' & houseNumber == 5 & floor == 4) # unique obs; https://www.boliga.dk/bolig/1505750/landfogedvej_5_4_th_2400_koebenhavn_nv
+
+## DECISION: 
+# most observations where available as ejerlejlighed; therefore, I delete the observations (n= 11) (usually, BP removes those ad from website)
+ads <- ads %>% filter(!(rentedout == 0 & is.na(offlineDate) == F))
+# ads %>% filter(offlineDate < publishDate) # 0 observations
+## DECISION: rentedout to be excluded from analysis
+```
+#### automaticBPreservation and automaticBPrentedout
+```{r}
+# ads %>% filter(automaticBPreservation == 1)  # 1913 rows; note: there are only 6 of those obs in 2019
+# ads %>% filter(automaticBPrentedout == 1) %>% arrange(desc(uniqueMessages)) %>% select(daysPublished, uniqueMessages, muName, offlineDate) #14176 observations; note: there are no observations with automaticBPrentedout = 1 in 2019 
+
+## DECISION:the fact that BP had to set those listings to reserved or rented out should not alter a listings attractivness --> the DV ratio should take care sufficiently of listings being longer on site then usual
+```
+#### duplicates (adsA)
+```{r}
+# duplicates <- ads %>% group_by(muName, muId, dwellingType, postalCode, streetName, floor, rooms, nrOfImages, houseNumber,houseLetter, doorNumber,side, livingArea, rent, deposit, prepaidRent, socialDeposit,ancillaryCosts, upsellServiceProduct) %>% filter(n() >1)  # 31000 duplicates
+# it appears that in cases in which information was added/changed occasionally new adId was created, but the rentedout date is of course the (approx.) same across those observations --> most of the time, however, uniquemessages are stored under first id created, leading to duplicates with no uniquemessages and thus noise
+
+# investigate duplicates again: 
+# ads %>% group_by(muName, muId, dwellingType, postalCode, streetName, floor, houseNumber,houseLetter, doorNumber,side, livingArea, rent, deposit, prepaidRent, socialDeposit) %>% filter(n() >1) %>% filter(muName == 'Ejendomsselskabet Viborg ApS' & streetName == 'Aagade') 
+
+# DECISION: exclude Ejendomsselskabet Viborg Aps duplicates; there were too many incidences where one observation had long time frame (2017-2018) and a duplicat with a short time frame within 2017
+Ejendomsselskabet  <- as.data.frame(ads %>% group_by(muName, muId, dwellingType, postalCode, streetName,rooms, nrOfImages, floor, houseNumber,houseLetter, doorNumber,side, livingArea, rent, deposit, prepaidRent, socialDeposit, ancillaryCosts, upsellServiceProduct) %>% filter(n() >1 & muName == 'Ejendomsselskabet Viborg ApS'))
+
+adsA <- ads %>% filter(!(adId %in% c(Ejendomsselskabet$adId)))
+
+# outlier detected: adId 2920794 - > remove
+adsA <- adsA %>% filter(!(adId == 2920794))
+
+# DECISION: exclude B2 Holding A/S
+B2Holding  <- as.data.frame(ads %>% group_by(muName, muId, dwellingType, postalCode, streetName, floor, rooms, nrOfImages, houseNumber,houseLetter, doorNumber,side, livingArea, rent, deposit, prepaidRent, socialDeposit,ancillaryCosts, upsellServiceProduct) %>% filter(n() >1 & muName == 'B2 Holding A/S'))
+
+adsA <- adsA %>% filter(!(adId %in% c(B2Holding$adId)))
+
+# to detect true (erroneous) duplicates, do the following: 
+# sort by publishDate (in ascending order) and calculate the lead difference within each duplicate group
+# there should not be: 
+# lead offlineDate >= 0 or publishdate >= 0 -> means that lead date is < than lag date and indicates that we have the common duplicate issue of one long timeframe obs. and then several smaller ones 
+
+duplicates2 <- adsA %>% group_by(muName, muId, dwellingType, postalCode, streetName, floor, rooms, nrOfImages, houseNumber,houseLetter, doorNumber,side, livingArea, rent, deposit, prepaidRent, socialDeposit, ancillaryCosts, upsellServiceProduct) %>% filter(n() >1) %>% arrange(publishDate) %>% mutate(lead.pb = publishDate - lead(publishDate), lead.rb = offlineDate - lead(offlineDate)) 
+
+# DECISION: delete observations with lead.rb >= 0 or lead.pb = 0
+lead <- as.data.frame(duplicates2 %>% filter(lead.rb >= 0 | lead.pb == 0))
+adsA <- adsA %>% filter(!(adId %in% c(lead$adId)))
+
+duplicates3 <- adsA %>% group_by(muName, muId, dwellingType, postalCode, streetName, floor,  rooms, nrOfImages, houseNumber,houseLetter, doorNumber,side, livingArea, rent, deposit, prepaidRent, socialDeposit,ancillaryCosts, upsellServiceProduct) %>% filter(n() >1) %>% arrange(offlineDate) %>% mutate(lead.pb = publishDate - lead(publishDate), lead.rb = offlineDate - lead(offlineDate)) 
+
+# DECISION: delete observations with lead.pb >= 0 
+lead2 <- as.data.frame(duplicates3 %>% filter(lead.pb >= 0))
+adsA <- adsA %>% filter(!(adId %in% c(lead2$adId)))
+
+duplicates4 <- adsA %>% group_by(muName, muId, dwellingType, postalCode, streetName, floor, rooms, nrOfImages, houseNumber,houseLetter, doorNumber,side, livingArea, rent, deposit, prepaidRent, socialDeposit, ancillaryCosts, upsellServiceProduct) %>% filter(n() >1) %>% arrange(publishDate) %>% mutate(lead.pb = publishDate - lead(publishDate), lead.rb = offlineDate - lead(offlineDate), cross = offlineDate - lead(publishDate), sum.cross = sum(cross, na.rm =T) )
+
+# delete all groups for which sum of cross date difference is > 0
+cross <- as.data.frame(duplicates4 %>% filter(sum.cross >0)) # 369 obs.
+adsA <- adsA %>% filter(!(adId %in% c(cross$adId)))
+
+# adsA %>% group_by(muName, muId, dwellingType, postalCode, streetName, floor, houseNumber,houseLetter, doorNumber,side, livingArea, rent, deposit, prepaidRent, socialDepositIndskud, publishDate) %>% filter(n() >1) # only 156  duplicates after removals
+```
+### Dataset construction (adsA1)
+#### Add phone requests to number of unique messages 
+```{r}
+adsA <- adsA %>% mutate(uniqueMessages2 = uniqueMessages+phoneNumberRequests)
+```
+
+#### Exclude features I: exlcude those only needed for consistency checks (adsA1)
+```{r}
+# exclude: contactviaemailenabled, XMLadNotIncluded, republished, status, muId, nrOfUniqueMessages (duplicate), revenue, conversion,savedSearchPotential (only values of 0), areaPrices,lastUpdated, rentedout (udlejed), upsell_ServiceDescription, daysPublished (created new variable), rentalPeriodId, packageTypeId
+adsA1 <- adsA %>% select(adId, dwellingType, floor, side, livingArea, rooms, furnished, sharedAccomodation, rentalPeriodDescription, socialHousing, rent, ancillaryCosts, deposit, prepaidRent, socialDeposit, postalCode,streetName, houseNumber, municipality_Id, municipality_name,nrOfImages, upsellServiceProduct, scrapedAd, muName, uniqueMessages,uniqueMessages2, publishDate, offlineDate)
+```
+#### Exclude property type 'Parkering'
+```{r}
+adsA1 <- adsA1 %>% filter(dwellingType != 'Parkering') # approx. 1000 obs.
+# adsA1: 145458 obs.
+```
+
+### Convert variables into correct datatype
+#### T Factors to Numeric
+* sometimes when a data frame is read directly from a file, a column you’d thought would produce a numeric vector instead produces a factor
+* this is caused by a non-numeric value in the column, often a missing value encoded in a special way like . or -
+* to deal with it, coerce the vector from a factor to a character vector, and then from a character to a double vector
+
+```{r}
+# check datatypes: (<stat scale>, <actual scale in R>)
+# str(ads2018V1)
+# str(ads)
+# adId:       indicator variable / integer -> convert to factor
+
+# muId:       indicator variable / integer
+# muName:     categorical variable / chr
+# dwellingType: ""
+# postalCode: categorical variable (nominal) / integer - convert to factor (to store as nominal)
+# floor: ordinal variable / integer 
+adsA1$floor <- as.integer(adsA1$floor)
+# doornumber: categorical variable (nominal) / integer - convert to factor (to store as nominal) 
+# ads$doorNumber <- as.factor(ads$doorNumber)
+# side: categorical variable / chr
+
+# livingArea, rent, deposit, prepaidRent, socialDeposit: continuous variable (ratio scale) / integer -> convert to numeric
+# ads2018V1[, c(which(colnames(ads2018V1) %in% c('livingArea', 'rent', 'deposit', 'prepaidRent', 'socialDeposit')))] <- lapply(ads2018V1[, c(which(colnames(ads2018V1) %in% c('livingArea', 'rent', 'deposit', 'prepaidRent', 'socialDeposit')))], function(x) as.numeric(x))
+
+adsA1[, c(which(colnames(adsA1) %in% c('livingArea', 'rent', 'deposit', 'prepaidRent', 'socialDepositIndskud')))] <- lapply(adsA1[, c(which(colnames(adsA1) %in% c('livingArea', 'rent', 'deposit', 'prepaidRent', 'socialDepositIndskud')))], function(x) as.numeric(x))
+
+# republished: indicator variable (binary) / integer -> convert to factor 
+# ads$republished <- as.factor(ads$republished)
+
+# publishDate, offlineDate: date variable / Date format: yyyy-mm-dd
+# rooms, nrOfImages: discrete variable (absolute scale)  -> convert to integer 
+adsA1[, c(which(colnames(adsA1) %in% c('rooms', 'nrOfImages')))] <- lapply(adsA1[, c(which(colnames(adsA1) %in% c('rooms', 'nrOfImages')))], function(x) as.integer(x))
+
+# nrOfDetailViews, nrOfSearchViews: continuous variable (absolute scale) / integer -> convert to numeric 
+# ads[, c(which(colnames(ads) %in% c('nrOfDetailViews', 'nrOfSearchViews')))] <- lapply(ads[, c(which(colnames(ads) %in% c('nrOfDetailViews', 'nrOfSearchViews')))], function(x) as.numeric(x))
+
+# ancillary costs: continuous variable (absolute scale) / integer -> convert to numeric 
+adsA1$ancillaryCosts <- as.numeric(adsA1$ancillaryCosts)
+
+# furnished, pets_allowed, shared_accomodation: categ variable (nominal with quant. representation; 3 level) / integer -> convert to factor (to store as nominal)
+adsA1[, c(which(colnames(adsA1) %in% c('furnished', 'petsAllowed', 'sharedAccomodation')))] <- lapply(adsA1[, c(which(colnames(adsA1) %in% c('furnished', 'petsAllowed', 'sharedAccomodation')))], function(x) as.factor(x))
+
+# socialHousingAlmen: dummy variable (binary) / integer --> convert to factor (to store as nominal)
+adsA1$socialHousing <- as.factor(adsA1$socialHousing)
+
+# municipality Id: indicator variable (nom scale) / integer
+# municipality name: cat (nom scale) / chr
+
+# coord_lat, coord_lang: continuous variable (absolute scale) / character -> convert to numeric
+# ads$coordLat - as.numeric(ads$coordLat)
+# ads$coordLng <- as.numeric(ads$coordLng)
+
+# rename rental period description: cat var / chr
+
+# automaticBPreservation, automaticBPrentedout: indicator variable (binary) / integer
+
+# scrapeAd, XMLadNotIncluded: dummy (nom scale) / integer -> convert to factor 
+adsA1$scrapedAd <- as.factor(adsA1$scrapedAd)
+# ads$XMLadNotIncluded <- as.factor(ads$XMLadNotIncluded)
+
+# upsellServiceProduct: categorical variable (nominal scale) / character 
+
+# uniqueMessages: continuous variable (absolute scale)
+adsA1$uniqueMessages <- as.numeric(adsA1$uniqueMessages)
+adsA1$uniqueMessages2 <- as.numeric(adsA1$uniqueMessages2)
+
+# movingInAsap: dummy(nom scale) / integer -> convert to factor 
+adsA1$movingInAsap <- as.factor(adsA1$movingInAsap)
+adsA1$dwellingType <- as.character(adsA1$dwellingType)
+```
+
+### Data cleansing II: Outliers 
+```{r}
+str(ads)
+dim(Data) #nrow, ncol
+DataExplorer::plot_str(ads, type = 'diagonal', linkColour= 'red') 
+# plots a network with one level, displaying all variables with the respective datatype
+
+# plot multiple datasets in one view: 
+list <- list(ads, creditcard)
+plot_str(list, type = 'diagonal', linkColour = 'red')
+
+# get a table overview of: # rows/Datensätze, # of columns, #discrete columns, total number of observations (#rows * #columns)
+DataExplorer::introduce(creditcard)
+# note: 
+# all_missing_columns: number of columns with everything missing
+# complete_rows: number of rows without missing values
+
+# visualize table above: 
+DataExplorer::plot_intro(creditcard) 
+
+# find number of distinct values/levels of each variable
+ads %>% select(adId, rent, muName) %>% summarise_each(list(distinct = n_distinct)) 
+# note: in documentation funs() is mentioned instead of list()
+# however, funs() is soft deprecated as of dplyr 0.8.0
+# use list() instead 
+```
+
+#### Numeric features
+#### For testing single features
+##### Use Histograms, distributions and quantiles with Data Explorer
+* https://cran.r-project.org/web/packages/DataExplorer/vignettes/dataexplorer-intro.html
+```{r}
+DataExplorer::plot_bar(Data) # provides a frequency plot for each discrete and categorical variables
+DataExplorer::plot_histogram(ads_stats2019) # provides histograms for each continuous feature 
+```
+* syntax: quantile (x <numeric vector>, probs = <numeric vector of probabilities in [0,1] giving the quantile boundaries)
+```{r}
+# Quartile: 
+x <- c(2,1,2,1,1,4,4,4,5,5,5,6,6,7,7,3)
+quantile(x, prob = seq(0,1,0.25))
+```
+
+##### Use descriptive stats: standard deviation method (z-score)
+* z-score tells you how many standard deviations an observations is away from the mean of all observations
+* Werte können ggf. vorher standardisiert werden, um sie in Normalverteilung zu überführen
+```{r}
+numeric.var <- adsA1 %>% select_if(is.numeric) 
+numeric.var <- numeric.var[,-1]
+data.frame(Min = apply(numeric.var, 2, min), 
+  Med = apply(numeric.var, 2, median), 
+  Mean = apply(numeric.var, 2, mean), 
+  Var = apply(numeric.var, 2, var),
+  SD = apply(numeric.var, 2, sd), 
+  Max = apply(numeric.var, 2, max)
+  )
+```
+* every variable except houseNumber and municipality_Id (are not considered as features in prediction model) and uniquemessages (will be considered together w/ days online) has to be checked
+
+##### Use boxplots: Interquartilsabstand und Spannweite 
+* in a boxplot, an outlier is any observation > 1.5 the inter-quartile range above the upper quartile and below the lower quartile
+* inter-quartile range is value range between 0.75 and 0.25 quartiles
+* außerdem gibt die Spannweite (Max-Min) Einblick in Breite der Verteilung 
+
+```{r} 
+# Boxplots for numeric data 
+numeric.var <- adsA1 %>% select_if(is.numeric) 
+numeric.var <- numeric.var[,-1]
+name.var <- colnames(numeric.var)
+
+output <-  vector("list", length(numeric.var))
+outlier <- vector("list", length(numeric.var))
+
+for (i in seq(numeric.var)) {
+  output[[i]] <- boxplot(numeric.var[[i]], xlab = name.var[[i]])
+  outlier[[i]] <- output[[i]]$out
+  }
+```
+```{r}
+# floor: 
+# outlier.floor <- as.data.frame(outlier[1], col.names = 'floor')
+# view(outlier.floor) # note: tallest building in DK has 30 floors
+adsA1 <- adsA1 %>% filter(!(floor > 30))
+# min(ads$floor) # 0 
+
+# livingArea
+# ads %>%  filter(livingArea == 0)
+adsA1 <- adsA1 %>% filter(!(livingArea == 0))
+# outlier.livingArea <- as.data.frame(outlier[2], col.names = 'livingArea') # 4423 obs.
+# view(outlier.livingArea)
+adsA1 <-  adsA1 %>% filter(!(livingArea >= 1000))
+# range(ads$livingArea)
+
+# rooms 
+# outlier.rooms <- as.data.frame(outlier[3], col.names = 'rooms') # 13194 obs.
+# view(outlier.rooms)
+adsA1 <- adsA1 %>% filter(!(rooms == 0))
+adsA1 <- adsA1 %>% filter(!(rooms > 15))
+
+# rent contains by far most outliers: 
+# outlier.rent <- as.data.frame(outlier[4], col.names = 'rent') # 8984 obs.
+# adsA1 %>% filter(str_detect(muName, "Test+"))
+# min(outlier.rent)
+# short cut: delete all observations with rent > 100000 DKK
+adsA1 <- adsA1 %>% filter(!(rent > 100000)) # 63 observations
+# delete all observations with rent < 2000 DKK
+adsA1 <-  adsA1 %>% filter(!(rent < 2000)) # 1000 observations
+# ads %>% filter(rent  == 0) # 0 observations
+
+# ancillaryCosts 
+# outliers.ac <- as.data.frame(outlier[5], col.names = 'ac') # 1263 obs.
+# view(outliers.ac)
+# ads %>% filter(ancillaryCosts > 20000)
+# ads %>% filter(ancillaryCosts > rent) # 79 observations
+adsA1 <- adsA1 %>% filter(!(ancillaryCosts >= rent))
+# ac.minus <- adsA1 %>% filter(ancillaryCosts < 0) 
+# ac.minus %>% filter(ancillaryCosts ==-1) # all but 1 value or = -1; it can reasonably assumed that rent stated is including ancillary costs 
+adsA1$ancillaryCosts[adsA1$ancillaryCosts < 0] <- 0
+adsA1 <- adsA1 %>% filter(!(ancillaryCosts > 5000))
+
+# deposit (up to 3 times rent)
+# outliers.dep <- as.data.frame(outlier[6], col.names = 'dep') # 6382 obs.
+# view(outliers.dep)
+# dep.out <- adsA1 %>% filter(deposit != rent & deposit != 2*rent & deposit != 3*rent)## 25238 observations
+# dep.4 <- adsA1 %>% filter(deposit > 4* rent) # 325 observations; note: I keep the obsv. with dep > 3*rent because those listings occasionally appear on the website (e.g. scraped ads not double-checked) and they do have predictive power in terms of (low) number of enquiries
+adsA1 <- adsA1 %>% filter(!(deposit > 4*rent))
+
+# prepaidRent (up to 3 times rent)
+# outliers.pr <- as.data.frame(outlier[7], col.names = 'pr') # 7726 obs.
+dep.pp <- adsA1 %>% filter(prepaidRent != rent & prepaidRent != 2*rent & prepaidRent != 3*rent & prepaidRent !=0) # 5465 obs. 
+adsA1 <- adsA1 %>% filter(!(prepaidRent > 4*rent))
+
+# Indskud 
+# outlier.indskud <- as.data.frame(outlier[8], col.names = 'indskud') # 8868 observations 
+# view(outlier.indskud)
+adsA1 <-  adsA1 %>% filter(!(socialDeposit >= 100000))
+adsA1 <- adsA1 %>% filter(!(socialDeposit < 1000 & socialDeposit != 0))
+# range(ads$socialDepositIndskud) # max 90000
+# ads %>% filter(socialDepositIndskud >= 60000)
+
+# nrOfImages 
+# outlier.nrOfImages <- as.data.frame(outlier[11], col.names = 'nrOfImages') # 3147 obs. 
+# view(outlier.nrOfImages)
+# view(adsA1 %>% filter(nrOfImages > 25)) # maximum number of images
+adsA1 <- adsA1 %>% filter(nrOfImages <= 25)
+```
+#### Categorical features
+##### T table(data$feature)
+*display number of observations per category/level
+```{r}
+cat.var <- adsA1 %>% select_if(is.character) 
+# table(adsA1$side)
+# DECISION: delete noise 
+adsA1 <- adsA1 %>% filter(side %in% c('MF', 'TH', 'TV', NA))
+# table(adsA1$side)
+# table(adsA1$dwellingType) # no noise
+# table(adsA1$rentalPeriodDescription) # no noise 
+# table(adsA1$upsellServiceProduct) # null, open ad, top ad -> change null to different level 
+```
+```{r}
+# fact.var <-  adsA1 %>% select_if(is.factor) 
+# table(adsA1$furnished) # 0,1,2
+# table(adsA1$petsAllowed) # 0,1,2
+# table(adsA1$sharedAccomodation) # 0,1,2
+# table(adsA1$movingInAsap) # 0,1
+# table(adsA1$socialHousing) # 0,1
+# table(adsA1$phoneNumberListed) # 0 - no variation
+# table(adsA1$scrapedAd)# 0,1
+```
+#### For Categorical and Continuous: use clustering
+* similarity/dissimilarity measures:
+* for features measured on interval scale: distance measures (e.g. euclidean distance)
+* for features measured on nominal or ordinal scale: matching measures such as percentag of times agreement occurs 
+
+### Feature Engineering: Independent Variables 
+```{r}
+## waiting time: difference between datePublished and movingInDate
+# 1. impute publishDate for movinginDate if moving in is possible asap
+# test: 
+# ads2 <- ads
+# ads2$movingInDate <- if_else(ads2$movingInAsap == 1, ads2$publishDate, ads2$movingInDate) # sidenote: dplyrs if_else requires that datatype of true and false statement are the same, and thereby, ensures that output also has same datatype (in this case date); ifelse (base) coerced to numeric
+
+# apply: 
+adsA1$movingInDate <- if_else(adsA1$movingInAsap == 1, adsA1$publishDate, adsA1$movingInDate)
+
+# 2. calculate difference 
+# test: 
+# ads %>% mutate(waitingTime = movingInDate - publishDate) %>% filter(waitingTime >= 100)
+# apply: 
+adsA1 <- as.data.frame(adsA1 %>% mutate(waitingTime = movingInDate - publishDate))
+adsA1$waitingTime <- as.numeric(adsA1$waitingTime)
+
+## add: month moving in date; there are certain month (e.g. August) particularly popular for moving
+adsA1 <- adsA1 %>% mutate(monthMovingIn = month(movingInDate))
+adsA1$monthMovingIn <- as.integer(adsA1$monthMovingIn)
+
+## add indflytningspris: first month rent + deposit/indskud + prepaid rent + first month ancillary costs
+# this is to reduce (perfect) correlation between rent and deposit/prepaid rent
+# check <-  adsA %>% filter(socialDepositIndskud > 0) # 0 observations that have entry in Indskud and Deposit 
+
+adsA1 <- adsA1 %>% mutate(movingInPrice = rent + deposit + socialDeposit + prepaidRent + ancillaryCosts)
+adsA1$movingInPrice <- as.numeric(adsA1$movingInPrice)
+## add prepaid rent binary: binary variable indicating whether prepaid rent has to paid (check with renting sides again)
+# test: 
+# ads2 <- ads
+# ads2$prepaidRent <- if_else(ads$prepaidRent > 0, 1, 0) # note: prepaidRent does not have any missing values
+# apply: 
+adsA1 <-adsA1 %>% mutate(prepaidRentI = if_else(adsA1$prepaidRent > 0, 1, 0))
+adsA1$prepaidRentI <- as.factor(adsA1$prepaidRentI)
+# table(adsA1$prepaidRentI) # 0,1
+
+## add megaUser: binary variable indicating whether landlord = professional
+# ads2 <- ads2 %>% mutate(megaUser = if_else(is.na(ads2$muName) == F, 1, 0))
+adsA1 <- adsA1 %>% mutate(megaUser = if_else(is.na(adsA1$muName) == F, 1, 0)) # note: I assume here that if NA, it is not professional landlord, rather than that there is no info available 
+adsA1$megaUser <- as.factor(adsA1$megaUser)
+# table(adsA1$megaUser) # 0,1
+
+## seasonality: 
+# static seasonality: add seasonal dummies using the publishDate
+adsA1 <- adsA1 %>% mutate(monthPublished = month(publishDate)) 
+adsA1$monthPublished <- as.integer(adsA1$monthPublished)
+
+# add daysPublished with publish date included in count 
+adsA1 <- adsA1 %>% mutate(daysOnline = offlineDate - publishDate + 1) 
+adsA1$daysOnline <- as.numeric(adsA1$daysOnline)
+
+# add municipality per postalCode (for embedding clustering)
+# ads2 <- ads
+# ads2 <- merge(ads2, zip2muni, by.x = 'postalCode', by.y = 'ZIP', all.x = T)
+adsA1 <- merge(adsA1, zip2muni, by.x = 'postalCode', by.y = 'ZIP', all.x = T)
+# table(adsA1$Municipality)
+adsA1$Municipality <- as.character(adsA1$Municipality)
+adsA1$Region <- as.character(adsA1$Region)
+
+# add moving median of rent per DwellingType 
+# ads2 <- ads
+# ads2 <- ads2 %>% group_by(dwellingType) %>%  arrange(publishDate) %>% mutate(movMedianRent60 = runMedian(rent, n = 60))
+# ads2 %>% filter(dwellingType =='4 vær. eller større') %>% arrange(publishDate)
+adsA1 <- adsA1 %>% group_by(dwellingType) %>%  arrange(publishDate) %>% mutate(movMedianRent90 = runMedian(rent, n = 90))
+# sum(is.na(adsA1$movMedianRent90))
+# adsAT <- adsA1
+# adsAT$movMedianRent90[is.na(adsAT$movMedianRent90) == T] <- adsAT$rent[is.na(adsAT$movMedianRent90) == T]
+adsA1$movMedianRent90[is.na(adsA1$movMedianRent90) == T] <- adsA1$rent[is.na(adsA1$movMedianRent90) == T]
+
+# add ratio rent of listing is below 90 'days' median 
+adsA1 <- adsA1 %>% mutate(movMedianRent90R = rent/movMedianRent90)
+adsA1$movMedianRent90R <- as.numeric(adsA1$movMedianRent90R)
+# ads2 %>% filter(dwellingType =='4 vær. eller større') %>% arrange(publishDate)
+adsA1 <- as.data.frame(ungroup(adsA1))
+```
+### Data cleansing III (after feature engineering) 
+#### Numeric again
+* include: Skew, Kurt, VaKo (p.378 Scrone)
+```{r}
+numeric.var <- adsA1 %>% select_if(is.numeric) 
+numeric.var <- numeric.var[,-1]
+data.frame(Min = apply(numeric.var, 2, min, na.rm = T), 
+  Med = apply(numeric.var, 2, median, na.rm = T), 
+  Mean = apply(numeric.var, 2, mean, na.rm = T), 
+  Var = apply(numeric.var, 2, var, na.rm = T),
+  SD = apply(numeric.var, 2, sd, na.rm = T), 
+  Max = apply(numeric.var, 2, max, na.rm = T)
+  )
+
+```
+* check waitingTime, movMedianRent90R 
+```{r}
+dates.var <- adsA1 %>% select_if(is.Date) 
+dates.var <- dates.var[,-c(1)]
+data.frame(Min = apply(dates.var, 2, min, na.rm = T),
+  Max = apply(dates.var, 2, max, na.rm = T)
+  )
+```
+```{r}
+# bp <- boxplot(adsA1$waitingTime)
+# outlier.wT <- as.data.frame(bp$out, col.names = 'wT') # 9771 observations
+# view(outlier.wT %>% filter(bp$out < 0)) # 3654 erroneous observations
+# view(adsA1 %>% filter(waitingTime < 0 & movingInAsap == 1)) # 0 observations
+# Decision: impute mean value for negative waitingTime 
+adsA1 <- adsA1 %>% filter(!(waitingTime > 1000))
+# adsA1 %>% filter(waitingTime >= 0) %>% summarize(mean(waitingTime))
+c <-  41.2012	
+# adsAT <- adsA1
+# adsAT$waitingTime[adsAT$waitingTime < 0] <- c
+# adsAT %>% filter(waitingTime <0)
+# adsAT %>% filter(waitingTime == c) # all neg. values replaced
+# adsA1 %>% filter(waitingTime < 0) # observations
+adsA1$waitingTime[adsA1$waitingTime < 0] <- c
+```
+
+```{r}
+# bp <- boxplot(adsA1$movMedianRent90R)
+# outlier.movMedianRent90R <- as.data.frame(bp$out)
+# mean(adsA1$movMedianRent90R)
+# no noise detected
+```
+### Exclude features II: redundant after feature engineering (adsA2)
+```{r}
+# exclude: movingInDate (incorp. by waitingTime), movingInAsap (incorp. by waitingTime), streetName, houseNumber, muName, municipality variables (replaced by correct data), publishDate and offlineDate (incorp. by days online), phoneNumberlisted (only 0)
+# ads<- ads[,c(-which(colnames(ads) %in% c())]
+adsA1 <- as.data.frame(ungroup(adsA1))
+adsA2 <- adsA1[,c(-which(colnames(adsA1) %in% c('movingInDate', "movingInAsap", "streetName", "houseNumber", "municipality_Id", "municipality_name", "muName","offlineDate", "publishDate", "movMedianRent90")))]
+```
+### Create Dependent Variable (adsA2)
+```{r}
+# Unique Messages per Day Online 
+adsA2 <- adsA2 %>% mutate(uniqueMessagesPerDay = uniqueMessages/daysOnline)
+adsA2 <- adsA2 %>% mutate(uniqueMessagesPerDay2 = uniqueMessages2/daysOnline)
+```
+### Distribution dependent variable 
+```{r}
+# unique Messages per Day Online 
+# adsA2 %>% ggplot(aes(daysOnline, uniqueMessages)) + geom_jitter() # there is no sign of linear relationship
+adsA2 %>% ggplot(aes(uniqueMessagesPerDay)) + geom_density() 
+adsA2 %>% ggplot(aes(uniqueMessagesPerDay2)) + geom_density() 
+adsA2 <- adsA2[, -c(which(colnames(adsA2) == "uniqueMessagesPerDay"))]
+# distribution is highly skewed to the right, one-sided long-tail
+# moments::skewness(adsA2$uniqueMessagesPerDay) # 13.55689
+
+# bp <- boxplot(adsA2$uniqueMessagesPerDay)
+# outlier.umpd <- as.data.frame(bp$out, ylab = UMPD) # >11000 outliers, no noise (all max umpd values occur in most popular copenhagen areas)
+
+# DECISION data transformation: check whether log of uniqueMessagesPerDay resolves skewness to the right; reasoning: 
+
+# adsA2 %>% filter(uniqueMessagesPerDay > 0) %>% ggplot(aes(log(uniqueMessagesPerDay))) + geom_density() # log-normally distributed
+# adsA2 %>% filter(uniqueMessages > 0) %>% arrange(uniqueMessages)
+# in order to be able to log transform 0 values, I add a constant c; rule of thumb (Dormann & Kühn, S. 38) choose c = min(y)/2 and then log(y+c); c= 1 in my case 
+# test: 
+# ads2 <- adsA2
+# ads2$uniqueMessages <- ads2$uniqueMessages+1 # does change mean, but not variance of distribution (variance is invariant towards affine linear transformation y = a +x) (p. 44 mosler, schmid); therefore does not change ranking according to umpd
+# ads2$uniqueMessagesPerDay <- ads2$uniqueMessages/ads2$daysOnline
+# ads2 %>% ggplot(aes(log(uniqueMessagesPerDay))) + geom_density()
+# deploy: 
+adsA2 <- adsA2 %>% mutate(uniqueMessagesC = uniqueMessages2 +1, uniqueMessagesPerDayC = uniqueMessagesC/daysOnline, loguMPD = log(uniqueMessagesPerDayC)) 
+adsA2 <- adsA2[,-which(colnames(adsA2) %in% c('uniqueMessagesC', 'uniqueMessagesPerDayC', 'uniqueMessages'))]
+# adsA2 %>% ggplot(aes(loguMPD)) + geom_density() # approx. log-normal distributed
+dat <- data.frame(x = c(adsA2$uniqueMessagesPerDay2,adsA2$loguMPD)
+                   , Variable = rep(c("MessagesPerDay", "log(MessagesPerDay)"), each = length(adsA2$uniqueMessagesPerDay2)))
+#Plot.
+dat %>% filter(x <=60) %>% ggplot(aes(x = x, fill = Variable)) + geom_density(alpha = 0.5)
+### Data cleansing IV: Noise DV
+```
+
+```{r}
+# bp <- boxplot(adsA2$daysOnline)
+# outlier.daysO <- as.data.frame(bp$out)
+# view(adsA1 %>% filter(daysOnline > 600))
+# DECISION: listings are taken offline after 2 years; none of the outliers are beyond that treshold; therefore, non can be classified as errors
+# bp <-  boxplot(adsA2$uniqueMessages)
+# outlier.uM <-  as.data.frame(bp$out)
+# view(adsA1 %>% filter(uniqueMessages > 5000))
+# DECISION: there are some extreme values, but ratio adjusts for it 
+```
+## Data cleansing V (after data exploration)
+### Find missing values 
+#### T: Count number of MVs over multiple columns (dplyr, base::sapply, purrr::map)
+```{r}
+## using dplyr: 
+ads %>% summarise_all(funs(missing_values = sum(is.na(.))))
+# one needs to provide the function within funs()
+# `.`is a placeholder for each column
+
+## using base R: sapply
+sapply(ads, function(x) sum(is.na(x))) 
+# as base R function, sapply only takes a function with function(x)
+# Con: sapply automatically simplifies the output, so one does not really know which format one gets
+
+## using purrr::map
+purrr::map(ads, ~ sum(is.na(.)))
+# here function has to be provided as formula (`~` is used)
+
+```
+#### T: Get the columns with missing values
+```{r}
+colnames(ads)[colSums(is.na(ads) == T) >0]
+```
+#### T: Count MVs for individual columns
+```{r}
+ads %>% tally(is.na(side) == T) # tally is a wrapper function for summarise() that will either call n() or sum(n()) depending on whether one tallys for the first time, or is re-tallying; 
+# note: count() takes much longer, as count function calls group_by before and ungroup() after 
+
+ads %>% filter(is.na(side) == T) %>% summarise(n())
+```
+#### T: Use DataExplorer: plot_missing, 
+```{r}
+# plot_missing depicts percentage of NAs for each feature
+DataExplorer::plot_missing(ads) 
+# missing_only depicts only features with NAs
+```
+
+
+### Handle missing values
+* https://towardsdatascience.com/how-to-handle-missing-data-8646b18db0d4
+* https://statistik-und-beratung.de/2019/04/die-verschiedenen-arten-von-fehlenden-werten-mcar-mar-und-nmar/
+* In general: the exact solution of how to handle missing values is dependent on the kind of problem (Time Series Analysis vs. ML vs. Inference)
+* there exists 3 main approaches for handling missing values: omit, impute, choice of method able to handle missing values
+
+
+#### Impute NA for equivalent labels (e.g. 999, unknown)
+* if missing data has a particular label code in the original file (such as, unknown, 999, etc.), we can recode that label class to missing value using:
+# data[data %in% c("unknown", 999)] <- NA 
+
+#### if number of missing values neglible or better: if one can reasonably assume that missing data is completely at random (Missing Completely At Random MCAR): omit observations
+* MCAR: 
+  + fact that data is missing for a variable is independent of variable itself as well as the other variables 
+  + therefore, there is no underlying systematic that could predict the missing of the data
+  + therefore, the data is likely to be still representative for the population
+  + for inference: when data are MCAR, the analysis performed on the data is unbiased;
+  + therefore, these missing values can be ignored, because they do not inhere any information
+  + however, data are rarely MCAR
+
+* Data <- na.omit(Data)
+#### Data is missing systematically: 
+* for instance, in BP case, it might be that renters w/ presumably popular housing, my intentionally leave some information like telefon number out 
+* omitting these observations, my lead to undetected relationship between IV and DV 
+
+##### if missing data is at random (Missing At Random MAR): omit observations
+* MAR: 
+  + Fehlwerte treten bedingt zufällig auf 
+  + hängt zwar nicht von der Variablen selbts, aber anderen Variablen ab
+  + z.B.: Frauen sind, unabhängig von ihrem Alter, weniger gewillt ihr Alter anzugeben als Männer
+
+! ##### if not omittable: impute (e.g. mean)
+* include: mice package !! (short for: multivariate imputations via chained equations) https://www.kdnuggets.com/2017/09/missing-data-imputation-using-r.html
+
+* https://en.wikipedia.org/wiki/Imputation_(statistics)
+* Data$A <- Hmisc::impute (Data$A) # impute values to variable A
+* NOTE: If object is of class "factor", fun is ignored and the most frequent category is used for imputation.
+* Consenquences of imputing mean:
+  + underestimation of variance/sd for variable as n increases, but squared deviation from mean is 0
+  + bias of correlation between 2 variables 
+    + this is because, imputing the mean reduces the correlation between involving the variables that are imputed 
+    + in cases with imputation, there is guaranteed to be no relationship between the imputed variable and any other measured variables (think about covariance)
+    + thus, mean imputation has some attractive properties for univariate analysis but becomes problematic for multivariate analysis
+  
+##### if not omittable: regression imputation (e.g. using decision trees)
+* one can use decision trees, with MV variables as response and rest of input variables as input 
+* because the imputed value for each input variable is based on the other input variables, this imputation technique may be more accurate than simply using the variable mean or median
+* important: by predicting one IV through others, we create dependencies between those
+  + i.e. we have the opposite problem to mean imputation 
+  + the problem is that the imputed data do not have an error term included in their estimation, thus the estimates fit perfectly along the regression without any residual variance
+  + regression model predicts the most likely value of missing data but does not supply uncertainty about that value
+  + this causes relationships to be over identified and suggest greater precision in the imputed values than is warranted
+  + therefore: this method should not be used for all variables, particular when the variable is of little importance
+  + use this method if the value of the variable is critical to accurately predict the outcome, and it is therefore reasonable to use all available information to obtain the best prediction of the missing value
+
+##### if missing not at random (MNAR): impute another label e.g. 'NoInformation'
+* Data$A[is.na(Data$A) == T] <- 'NoInformation'
+
+```{r}
+# side for Hus/villa 
+# explore:
+# ads2 <- adsA2
+# side <- ads2 %>% filter(is.na(side) == T) # 80000 observations over both years
+# side <- ads2 %>% filter(is.na(side) == F) # 50000 observations over both years
+# side <- ads2 %>% filter(is.na(side) == F & year(publishDate) == 2018) # approx. 50%
+# ads2 %>% filter(dwellingType =='Hus/villa' & is.na(side) == T) # 15000
+# ads2 %>% filter(dwellingType =='Rækkehus' & is.na(side) == T) # 6000 observations
+
+# DECISION: 
+# introduce additional dimension for side for House (H) to indicate that info is not simply missing, but not applicable
+# test:  
+# ads2$side[ads2$dwellingType == 'Hus/villa'] <- 'H'
+# ads2 %>% filter(dwellingType =='Hus/villa' & side == 'H')
+# ads2$side[ads2$dwellingType == 'Rækkehus'] <- 'H'
+# ads2 %>% filter(dwellingType =='Rækkehus' & side == 'H') 
+# deploy: 
+adsA2$side[adsA2$dwellingType == 'Hus/villa'] <- 'H'
+adsA2$side[adsA2$dwellingType == 'Rækkehus'] <- 'H'
+# adsA1 %>% filter(is.na(side) == T) # 62,000 observations
+# table(adsA1$side)
+
+## floor for houses:
+# view(adsA1 %>% filter(dwellingType != "Rækkehus" & dwellingType != "Hus/villa" & floor == 0)) 60721 obs have floor = 0
+# ads2 %>% filter(is.na(floor) == F) # all observations have floor; 
+
+# DECISION: whereas for CART it does not matter, I do not want to coerce floor to categorical variable by introducing add. Dimension such as H for ANN -> I want to keep the intrinsic order/numeric characteristics of 'floor'
+# therefore, I impute NAs for Hus/villa and Raekkehus 
+# test: 
+# ads2$floor[ads2$dwellingType == 'Hus/villa'] <- NA
+# ads2$floor[ads2$dwellingType == 'Rækkehus'] <- NA
+# deploy:
+adsA2$floor[adsA2$dwellingType == 'Hus/villa'] <- 31
+adsA2$floor[adsA2$dwellingType == 'Rækkehus'] <- 31 
+# 22473 obs. with floor = 31 -> equals 22473 of dwelling type hus/raekke.
+
+# bin floor variable: as preparation for Neural Network one-hot encoding
+# table(adsA2$floor) 
+# mean(adsA2$floor)
+# median(adsA2$floor)
+# hist(adsA2$floor) # extremely skewed to the right -> looks like poisson count data
+adsA2 <- adsA2 %>% mutate(bin.floor = floor)
+adsA2$bin.floor[adsA2$bin.floor > 10 & adsA2$bin.floor < 31] <- ">10"
+table(adsA2$bin.floor)
+
+# upsellProduct: change 3rd dimension for when no product was bought from null 'none'
+# test: 
+# ads2$upsellServiceProduct[ads2$upsellServiceProduct == 'null'] <- 'none'
+# deploy: 
+adsA2$upsellServiceProduct[adsA2$upsellServiceProduct == 'null'] <- 'none'
+
+# check for nas again:
+# sum(is.na(adsA2)) # 61175 observations
+# sum(is.na(adsA2$side)) # 61175 -> all missing values for side 
+
+# DECISION: introduce additional dimension for missing: 'missing' 
+adsA2$side[is.na(adsA2$side == T)] <- 'Missing'
+# sum(is.na(adsA2)) # 0 observations
+
+adsA2 <- adsA2 %>% filter(petsAllowed != 2)
+adsA2$petsAllowed <- droplevels(adsA2$petsAllowed)
+adsA2 <- adsA2 %>% filter(furnished != 2)
+adsA2$furnished <- droplevels(adsA2$furnished)
+adsA2 <- adsA2 %>% filter(sharedAccomodation != 2)
+adsA2$sharedAccomodation <- droplevels(adsA2$sharedAccomodation)
+droplevels(adsA2)
+adsA2$upsellServiceProduct[adsA2$upsellServiceProduct =='Open Ad'] <- 'yes'
+adsA2$upsellServiceProduct[adsA2$upsellServiceProduct =='Top Ad'] <- 'yes'
+adsA2$upsellServiceProduct[adsA2$upsellServiceProduct =='none'] <- 'no'
+```
+```{r}
+saveRDS(adsA2, file = "C:/Users/Kim F/Desktop/Master Thesis/1. BP Data/ EDA.rds")
+```
+
+# Clustering
+## Data preprocessing and test for assumptions
+```{r}
+# test for multicollinearity (Pearson Correlation Coefficient)
+corrmathD18V1 <- cor(hD18[, -c(which(colnames(hD18) %in% c('ID','Municipality')))])
+corrplot(corrmathD18V1, method = 'pie')
+```
+```{r}
+# exclude: PSPRH, PSOSH, PSH0CH, PSPA09, PSP1019,PSP4064, PSPEH, PSPEBD
+corrmathD18V2 <- cor(hD18[, -c(which(colnames(hD18) %in% c('ID','Municipality', 'dis', 'PSPRH','PSOSH', 'PSH0CH', 'PSPA09', 'PSPEH', 'PSPEBD', 'PSPW', 'PSPA1019', 'PSPA4064')))])
+corrplot(corrmathD18V2, method = 'pie')
+```
+
+```{r}
+# create new dataset dealing with the multicollinearity 
+# name observations according to municipalities
+municipalities <- hD18[,1:2]
+rownames(hD18) <- municipalities$Municipality
+
+# exclude: PSOSH, PSH0CH, PSPA09, PSP1019,PSP4064, PSPEH, PSPEBD; ID and Municipality for cluster analysis only 
+hD18V1 <- hD18[, -c(which(colnames(hD18) %in% c('ID', 'Municipality', 'dis','PSOSH', 'PSH0CH', 'PSPA09', 'PSPEH', 'PSPEBD', 'PSPW', 'PSPA1019', 'PSPA4064')))]
+
+# further exclude: PSPMC, PSPA3039
+hD18V2 <- hD18[, -c(which(colnames(hD18) %in% c('ID', 'Municipality', 'dis', 'PSPRH','PSOSH', 'PSH0CH', 'PSPA09', 'PSPEH', 'PSPEBD', 'PSPW', 'PSPA1019', 'PSPA4064', 'PSPMC', 'PSPA3039')))]
+```
+### Test distributional assumptions; !insert iteration function here
+```{r}
+
+plot(density(hD18$PSPRH))
+plot(density(hD18$AVDIF.DKK.))
+plot(density(hD18$PSUNEM))
+plot(density(hD18$POPDEN.km2.))
+plot(density(hD18$POPGWTH))
+plot(density(hD18$PSOOHC))
+plot(density(hD18$PSH0CH))
+plot(density(hD18$PSHMAX2CH))
+plot(density(hD18$PSHMIN3CH))
+plot(density(hD18$PSPNWC))
+plot(density(hD18$PSPA1019))
+plot(density(hD18$AVC17))
+```
+## Standardization
+```{r}
+# test whether variables should be standardized by checking the standard deviations
+round(data.frame(
+  Min = apply(hD18V1, 2, min), # minimum
+  Med = apply(hD18V1, 2, median), # median
+  Mean = apply(hD18V1, 2, mean), # mean
+  Var = apply(hD18V1, 2, var),
+  SD = apply(hD18V1, 2, sd), # standard deviation
+  Max = apply(hD18V1, 2, max) # maximum
+  ),1)
+```
+
+```{r}
+## Standardization necessary due to large differences between absolut and percentage values
+hd18.list <- list(hD18V1, hD18V2)
+hd18.result <-  lapply(hd18.list, function(x) as.data.frame(scale(x)))
+hD18V1S <- as.data.frame(hd18.result[1])
+hD18V2S <- as.data.frame(hd18.result[2])
+
+round(mean(hD18V1S$REGUL),2)
+sd(hD18V1S$REGUL)
+round(mean(hD18V1S$REGUL),2)
+sd(hD18V1S$REGUL)
+```
+## Hierarchical clustering 
+```{r}
+# distance matrix squared euclidean
+sqEucV1 <- dist(hD18V1S)^2
+# sqEucV2 <- dist(hD18V2S)^2
+```
+
+### 1. Ward's method 
+```{r}
+# 1. Ward's method (correctly implemented only in agnes with ward and hclust with ward.d2 only - see documentation hclust) 
+# both algorithms use squared Euclidean distance as is part of Ward's method
+
+ag.wardV1 <- agnes(hD18V1S, metric = 'euclidean', method = "ward")
+# ag.wardV2 <- agnes(hD18V2S, metric = 'euclidean', method = "ward")
+
+plot(ag.wardV1, main = 'agnes Ward V1', sub= paste("Agglomerative Coefficient =",round(ag.wardV1$ac, digits = 2)), max.strlen = 6)
+# plot(ag.wardV2, main = 'agnes Ward V2', sub= paste("Agglomerative Coefficient =",round(ag.wardV2$ac, digits = 2)), max.strlen = 6)
+
+# hc.ward <- hclust(dist(hD18V1S),method="ward.D2")
+# plot(hc.ward,main="hc Ward",xlab="",sub="",cex=.9)
+
+# sort(ag.ward$height)
+# sort(hc.ward$height)
+## yielded same results
+```
+### 2. Single Linkage method (with squared Euclidean distance)
+```{r}
+ag.singleV1 <- agnes(sqEucV1, method = "single")
+# ag.singleV2 <- agnes(sqEucV2, method = "single")
+plot(ag.singleV1, main = 'agnes single V1', sub= paste("Agglomerative Coefficient =",round(ag.singleV1$ac, digits = 2)))
+# plot(ag.singleV2, main = 'agnes single V2', sub= paste("Agglomerative Coefficient =",round(ag.singleV2$ac, digits = 2)))
+
+# hc.single <- hclust(dist(hD18V1S)^2, method="single")
+# plot(hc.single,main="hc single",xlab="",sub="",cex=0.8)
+
+# sort(ag.single$height)
+# sort(hc.single$height)
+## same results
+```
+### 3. Centroid Linkage with squared Euclidean distance
+```{r}
+hc.centroidV1 <- hclust(sqEucV1,method="centroid")
+plot(hc.centroidV1 ,main="hc centroid V1",xlab="",sub="",cex=0.8)
+# hc.centroidV2 <- hclust(sqEucV2,method="centroid")
+# plot(hc.centroidV2,main="hc centroid V2",xlab="",sub="",cex=0.8)
+```
+### 4. Average Linkage with squared Euclidean distance
+```{r}
+ag.avgV1 <- agnes(sqEucV1, method = "average")
+plot(ag.avgV1, main = 'agnes average V1', sub= paste("Agglomerative Coefficient =",round(ag.avgV1$ac, digits = 2)))
+# ag.avgV2 <- agnes(sqEucV2, method = "average")
+# plot(ag.avgV2, main = 'agnes average V2', sub= paste("Agglomerative Coefficient =",round(ag.avgV2$ac, digits = 2)))
+
+# hc.avg <- hclust(dist(hD18V1S)^2, method="average")
+# plot(hc.avg,main="hc average",xlab="",sub="",cex=0.8)
+
+# sort(ag.avg$height)
+# sort(hc.avg$height)
+## same results
+```
+### Interpretation of Dendograms 
+* overall, the different linkage types yield quite different cluster solutions
+* so, there is no clear clustering tendency in the data (Hastie p. 543)
+* there seeems to be one major group with similar municipalities, and 5-10 municipalities (incl. Copenhagen & Aarhus) dissimilar from this group; they get treated differently depending on the type
+* single linkage suffers from chaining effect and will therefore not be considered; clusters violate the compactness property (Hastie et al., p. 543)
+* centroid splits copenhagen and frederisberg from other rural areas such as aarhus and aalborg 
+  + interepretation-wise this is not desirable 
+* the same holds for average linkage 
+* therefore, only Ward's method will be considered further in finding the 'optimal' number of clusters k for k-means
+  + it yields most useful and distinctive cluster solution
+  + overall, Ward's yields agglomerative coefficient of 0.93 which speaks for high amount of clustering structure found (values closer to 1 suggst strong clustering structure; https://uc-r.github.io/hc_clustering)
+
+## Finding a value for k using Ward's Dendogram 
+```{r}
+# Calculate the percentage increase (V1)
+ag.wardV1$height
+increase <- c(as.numeric(ag.wardV1$height))
+cum.increase <- c(0,cumsum(increase))
+increase <- c(increase,0)
+pct <- (increase/cum.increase)*100
+pct
+tail(pct,n=10)
+# 7 (before 1.9% increase in height)
+```
+## Visualize potential cluster solutions: 
+```{r}
+fviz_dend(ag.wardV1,k = 6, rect = TRUE, cex = 0.5, main ="Ward's method K = 6",
+          k_colors = c("#00AFBB","#2E9FDF", "#E7B800", "#FC4E07", "#006633", "#CC0000"))
+fviz_dend(ag.wardV1, k = 7, rect = TRUE, cex = 0.5, main ="Ward's method K = 7",
+          k_colors = c("#00AFBB","#2E9FDF", "#E7B800", "#FC4E07", "#006633", "#CC0000"))
+# fviz_dend(ag.wardV1,k = 6, rect = TRUE, cex = 0.5,main ="Ward's method K = 6",k_colors = c("#00AFBB","#2E9FDF", "#E7B800", "#FC4E07", "#006633", "#CC0000", "#660066"))
+# fviz_dend(ag.wardV1,k =7, rect = TRUE, cex = 0.5,main ="Ward's method K = 7",k_colors = c("#00AFBB","#2E9FDF", "#E7B800", "#FC4E07", "#006633", "#CC0000", "#660066"))
+```
+## K-means clustering and Sil index
+```{r}
+# use different initiation configurations (nstart = 25) 
+# use different seeds to stabilize results (seed number one chooses is the starting point used in the generation of a sequence of random numbers)
+# hD18Vtest <- hD18[, -c(which(colnames(hD18) %in% c('ID', 'Municipality', 'dis', 'PSPRH','PSOSH', 'PSH0CH', 'PSPA09', 'PSPEH', 'PSPEBD', 'PSPW', 'PSPA1019', 'PSPA4064', 'PSUNEM')))]
+# hd18VtestS <-  as.data.frame(scale(hD18Vtest))
+
+set.seed(1234)
+k <- 6:7
+silhouette_score <- function(k){
+  km <- kmeans(hD18V1S, k, nstart=20)
+  ss <- silhouette(km$cluster, dist(hD18V1S))
+  mean <- mean(ss[,3]) # column 3 contains silhouettes for each observation
+}
+Sil1 <- sapply(k, silhouette_score)
+
+set.seed(324)
+k <- 6:7
+silhouette_score <- function(k){
+  km <- kmeans(hD18V1S, k, nstart=20)
+  ss <- silhouette(km$cluster, dist(hD18V1S))
+  mean <- mean(ss[,3]) # column 3 contains silhouettes for each observation
+}
+Sil2 <- sapply(k, silhouette_score)
+
+set.seed(22)
+k <- 6:7
+silhouette_score <- function(k){
+  km <- kmeans(hD18V1S, k, nstart=20)
+  ss <- silhouette(km$cluster, dist(hD18V1S))
+  mean <- mean(ss[,3]) # column 3 contains silhouettes for each observation
+}
+Sil3 <- sapply(k, silhouette_score)
+
+set.seed(11)
+k <- 6:7
+silhouette_score <- function(k){
+  km <- kmeans(hD18V1S, k, nstart=20)
+  ss <- silhouette(km$cluster, dist(hD18V1S))
+  mean <- mean(ss[,3]) # column 3 contains silhouettes for each observation
+}
+Sil4 <- sapply(k, silhouette_score)
+
+set.seed(633)
+k <- 6:7
+silhouette_score <- function(k){
+  km <- kmeans(hD18V1S, k, nstart=20)
+  ss <- silhouette(km$cluster, dist(hD18V1S))
+  mean <- mean(ss[,3]) # column 3 contains silhouettes for each observation
+}
+Sil5 <- sapply(k, silhouette_score)
+
+Sil1
+Sil2
+Sil3
+Sil4
+Sil5
+
+# results are stable in the sense that K = 7 always has the highest Sil 
+# visualize Sil:
+# plot(k, type='b', Sil3, xlab='Number of clusters', ylab='Average Silhouette Scores', frame=FALSE)
+# plot(k, type='b', Sil2, xlab='Number of clusters', ylab='Average Silhouette Scores', frame=FALSE)
+# plot(k, type='b', Sil1, xlab='Number of clusters', ylab='Average Silhouette Scores', frame=FALSE)
+# plot(k, type='b', Sil4, xlab='Number of clusters', ylab='Average Silhouette Scores', frame=FALSE)
+# plot(k, type='b', Sil5, xlab='Number of clusters', ylab='Average Silhouette Scores', frame=FALSE)
+# plot(k, type='b', Sil4, xlab='Number of clusters', ylab='Average Silhouette Scores', frame=FALSE)
+# plot(k, type='b', Sil5, xlab='Number of clusters', ylab='Average Silhouette Scores', frame=FALSE)
+```
+## Add clusters to HD dataset and visualize outcome
+```{r}
+set.seed(1255)
+km.7 <- kmeans(hD18V1S, 7, nstart=20)
+# km.8 <- kmeans(hd18VtestS, 8, nstart=20)
+
+## visualize the outcome (using PCA to reduce dimensions); 
+## from documentation: observations are represented by points in the plot, using principal components if ncol(data) > 2.
+
+fviz_cluster(km.7, data = hD18V1, pointsize = .2, labelsize = 8, repel = T)
+```
+* graphic indicates overlap between clusters 2&5
+* shouldn't come as a surprise with Sil of 0.25 (Kaufmann and Rousseeuw, 2005 state that Sil up until 0.5 states moderate clustering structure)
+
+## Interpret the outcome (using unstandardized dataset) 
+```{r}
+# append clusters to new dataset
+hD18V3 <- hD18V1
+hD18V3$nhcl <- km.7$cluster
+
+# add regions
+regions <- as.data.frame(read.csv("~/RegionsandMun.csv", sep =";"))
+municipalities_row <- rownames(hD18V3)
+hD18V3[,20] <- municipalities_row
+colnames(hD18V3)[20] <- 'Municipality'
+hD18V3 <- merge(hD18V3, regions, by = 'Municipality', all.x = T)
+```
+### Regions and Municipality
+```{r}
+# municipality-wise: 
+as.data.frame(table(hD18V3$nhcl))
+hD18V3 %>% group_by(as.factor(nhcl)) %>% count(Region)
+```
+### checking descriptive stats for clusters
+```{r}
+hD18V3.descr <- hD18V3 %>% group_by(nhcl) %>% summarise_at(colnames(hD18V3[, -c(1,20,21)]), funs(Min = min,Median = median,Mean= mean,Variance = var,Sd = sd,Max= max))
+hD18V3.descr
+```
+
+* Cluster 6: 
+* 2nd largest population density, but smallest market for profit rental housing and lowest owner-occupied housing 
+  + check on raw data revealved high share of social housing
+* fully regulated 
+* larger households in terms of children
+* 2nd highest divorce rate 
+* young demographics (2nd greatest share of pop. between 20-29 among clusters)
+* on avg. 2nd highest education level (2nd greatest share of pop. holding master's or higher)
+* lowest avg. commuting distance
+
+* Cluster 5: (B cities in terms of proft rental housing)
+* 3nd largest market for profit rental housing
+* fully regulated
+* 2nd largest avg. disposable income
+* 2nd largest avg. share of pop. > 65
+* one of the largest commuting distances 
+* 2nd lowest education level in terms of master's or higher
+
+* Cluster 1: Municipalities in proximity to metropolitan areas
+* highest avg. disposable income
+* highest home ownership rate, 2nd lowest profit rental housing
+* 3rd largest pop. density, 2nd largest growth
+
+* largest households, both, in terms of children per household and married couples
+* middle-aged demographics
+
+* Cluster 2: 
+* 3rd largest home ownership rate, 3rd largest profit rental housing
+* all mun. with the exception of 1, are not rental regulated 
+* lowest population density
+* descreasing population 
+* largest share of households with min 3 children 
+* rather low education level 
+
+* Cluster 7: 
+* 2nd largest home ownership rate, 3rd lowest profit rental housing
+* lowest avg. disposable income 
+* 2nd lowest avg. pop. density, highest pop. decrease
+* smallest housholds in terms of children
+* lowest perc. non-western citizenship
+* oldest demographics (greatest share of pop. > 65)
+* highest commuting distance
+
+* Cluster 3&4: Metropolian areas (A-cities)
+* on avg. highest population density and population growth (popularity increases)
+* on average largest market for profit rental housing; but also highest standard deviation (lower cohesion)
+* all regulated markets
+* second lowest avg. disposable income 
+* rather small households (with respect to children per household and married couples)
+* youngest demographics (by far greatest avg. share of pop. between 20-29)
+  + all municipalities host major universities (Aarhus University, Copenhagen Business School, University of Copenhagen, University of South Denmark (Odense), University of aalborg)
+* on avg. highest level of education (greatest share of pop. holding master's or higher)
+
+## Statistical sign. tests 
+```{r}
+# test for inter-cluster heterogeneity 
+# with respect to statistically significant different variances of groups
+# bartlett.test(hD18V3$POPDEN.km2.,hD18V3$nhcl.6) # at least one variance is stat. significant diff. from the others 
+# bartlett.test(hD18V3$PSUNEM,hD18V3$nhcl.6)# at least one variance is stat. significant diff. from the others 
+# bartlett.test(hD18V3$AVDIF.DKK.,hD18V3$nhcl.6)# at least one variance is stat. significant diff. from the others 
+
+# statistically different means of groups (one-way anova)
+# summary(aov(hD18V3$POPDEN.km2~as.factor(hD18V3$nhcl.6))) # at least one mean is stat. significant diff. from the others
+# summary(aov(hD18V3$AVDIF.DKK.~as.factor(hD18V3$nhcl.6))) # at least one mean is stat. significant diff. from the others
+```
+## Visualize clusters (Kartographisch)
+```{r}
+# ?map_data
+# denmark <- map_data("world", region = "Denmark")
+# clusters.map <- hD18V3 %>% select()
+```
+# Append clusters and housing data to adsA2 (adsA3)
+```{r}
+adsA3 <- adsA2
+adsA3 <- adsA3[,-c(which(colnames(adsA3) %in% c('Region', 'floor')))]
+hd18V3 <- hD18V3[,-c(which(colnames(hD18V3) %in% c('Region')))]
+adsA3 <- merge(adsA3, hd18V3, by.x = 'Municipality', by.y = 'Municipality', all.x = T)
+
+# check classes again: 
+# str(adsA3[,34:51])
+adsA3$PRH <- as.numeric(adsA3$PRH)
+adsA3$REGUL <- as.factor(adsA3$REGUL)
+adsA3$AVDIF.DKK. <- as.numeric(adsA3$AVDIF.DKK.)
+adsA3$nhcl <- as.factor(adsA3$nhcl)
+```
+```{r}
+# exclude, daysOnline & uniqueMessages
+adsA3 <- adsA3[,-c(which(colnames(adsA3) %in% c("daysOnline", "uniqueMessages2")))]
+```
+
+# Geocoding using Google's Geocode API (adsA6 and final output)
+```{r}
+install.packages('ggmap')
+library(ggmap)
+# register Google API
+register_google(key = "AIzaSyAcAxvWTyf7x4qEPMFIj94J5jagbZXGASU", write = T)
+# prepare dataset to get geocode for all adresses in dataset
+ads.adress <- ads %>% select(adId, postalCode, streetName, houseNumber)
+# ads.adress <- ads.adress %>% mutate(adress.string = paste(postalCode, streetName, houseNumber, 'Denmark', sep = " ", collapse = NULL))
+# ads.adress <- ads.adress %>% select(adId, streetName, houseNumber, adress.string)
+
+# long/lat detail adress
+# geo.adress.small <- as.data.frame(ads.adress[0:20000,])
+# geo.adress.small1 <- as.data.frame(ads.adress[20001:50000,])
+# geo.adress.small2 <- as.data.frame(ads.adress[50001:80000,])
+# geo.adress.small3 <- as.data.frame(ads.adress[80001:120000,])
+# geo.adress.small4 <- as.data.frame(ads.adress[120001:148808,])
+
+# adress <- geo.adress.small %>% mutate_geocode(adress.string)
+#adress1 <- geo.adress.small1 %>% mutate_geocode(adress.string)
+#adress2 <- geo.adress.small2 %>% mutate_geocode(adress.string)
+#adress3 <- geo.adress.small3 %>% mutate_geocode(adress.string)
+#adress4 <- geo.adress.small4 %>% mutate_geocode(adress.string) 
+
+# long/lat city center of municipalities' seat
+adsA4 <- merge(adsA3, ads.adress, by.x = 'adId', by.y = 'adId', all.x = F)
+geo.adress.muni <- adsA4 %>% select(Municipality) %>% distinct(Municipality)
+geo.adress.municor <- geo.adress.muni %>% mutate_geocode(Municipality)
+
+# append long/lat to dataset: 
+ads.coord <- ads %>% select(adId, coordLng, coordLat)
+format(ads.coord, decimal.mark = ".")
+options(digits=13)
+ads.coord$coordLat <- as.numeric(ads.coord$coordLat)
+ads.coord$coordLng <- as.numeric(ads.coord$coordLng)
+
+# adress.full <- rbind(adress, adress1, adress2, adress3, adress4)
+# adress.full <- adress.full[,c(1, 5:6)]
+# adsA5 <- merge(adsA3, adress.full, by.x = 'adId', by.y = 'adId', all.x = F)
+adsA5 <- merge(adsA3, ads.coord, by.x = 'adId', by.y = 'adId', all.x = F)
+adsA5 <- adsA5 %>% rename(lon.detail = coordLng, lat.detail = coordLat)
+# adsA5 %>% group_by(adId) %>% filter(n() >1) 
+# which(adsA5$adId == 3693604)
+# adsA5 <- adsA5[-111667,]
+
+adsA5 <- merge(adsA5,geo.adress.municor, by.x = 'Municipality', by.y = 'Municipality', all.x = T)
+adsA5 <- adsA5 %>% rename(lon.city = lon, lat.city = lat)
+# exclude NAs: 
+adsA6 <- na.omit(adsA5)
+adsA6$lon.detail <- as.numeric(adsA6$lon.detail)
+adsA6$lat.detail <- as.numeric(adsA6$lat.detail)
+
+#- calculate distance with: https://www.rdocumentation.org/packages/geosphere/versions/1.5-10/topics/distHaversine
+library(geosphere)
+# prepare dataset for harversine formula 
+p1 <- adsA6%>% select(lon.detail, lat.detail)
+p2 <- adsA6 %>% select(lon.city, lat.city)
+adsA6 <- adsA6 %>% mutate(hav.dist = distHaversine(p1, p2, r=6378137))
+
+# exclude redundant variables: 
+adsA6 <- adsA6[,-c(which(colnames(adsA6) %in% c('Municipality', "socialDeposit", "deposit", "prepaidRent")))]
+adsA6 <- adsA6[, -c(27:29,31:44, 46:49)]
+adsA6 <- adsA6 %>% filter(hav.dist <= 50000)
+```
+# Write Analysis I data to disc
+```{r}
+saveRDS(adsA6, file = "C:/Users/Kim F/Desktop/Master Thesis/1. BP Data/ A1.rds")
+```
