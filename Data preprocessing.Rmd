@@ -896,7 +896,9 @@ DataExplorer::plot_missing(ads)
 
 #### Impute NA for equivalent labels (e.g. 999, unknown)
 * if missing data has a particular label code in the original file (such as, unknown, 999, etc.), we can recode that label class to missing value using:
-# data[data %in% c("unknown", 999)] <- NA 
+```{r}
+data[data %in% c("unknown", 999)] <- NA 
+```
 
 #### if number of missing values neglible or better: if one can reasonably assume that missing data is completely at random (Missing Completely At Random MCAR): omit observations
 * MCAR: 
@@ -907,7 +909,13 @@ DataExplorer::plot_missing(ads)
   + therefore, these missing values can be ignored, because they do not inhere any information
   + however, data are rarely MCAR
 
-* Data <- na.omit(Data)
+```{r}
+Data <- na.omit(Data)
+Date <- 
+```
+
+
+
 #### Data is missing systematically: 
 * for instance, in BP case, it might be that renters w/ presumably popular housing, my intentionally leave some information like telefon number out 
 * omitting these observations, my lead to undetected relationship between IV and DV 
